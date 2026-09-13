@@ -602,6 +602,10 @@ describe("adapter server", () => {
     const checkedLarge = await peekHeaderlessSse(large)
     expect(checkedLarge).not.toBeNull()
     expect((await checkedLarge!.arrayBuffer()).byteLength).toBe(oversized.byteLength)
+
+    const longEvent = new Response(`data: {"type":"response.created","response":{"blob":"${"x".repeat(20 * 1024)}"}}\n\n`)
+    longEvent.headers.delete("content-type")
+    expect(await peekHeaderlessSse(longEvent)).not.toBeNull()
   })
 
   test("headerless non-SSE Responses bodies map to terminal 502", async () => {

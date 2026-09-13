@@ -435,10 +435,11 @@ function sseResponse(
   })
 }
 
-const HEADERLESS_SSE_PEEK_BYTES = 16 * 1024
+const HEADERLESS_SSE_PEEK_BYTES = 256 * 1024
 
 function hasResponsesSseFrame(text: string): boolean {
-  for (const line of text.split(/\r?\n/)) {
+  const lines = text.split(/\r?\n/)
+  for (const line of lines) {
     if (!line.startsWith("data:")) continue
     const data = line.slice(5).trim()
     if (!data || data === "[DONE]") continue

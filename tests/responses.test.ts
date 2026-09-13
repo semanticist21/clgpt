@@ -321,3 +321,8 @@ test("parallel Responses tool round-trips preserve ids, arguments and images", (
     { type: "input_text", text: "compare" },
   ] })
 })
+
+test("Responses requests explicitly disable server-side storage", () => {
+  expect(toResponsesRequest({ model: "gpt-5.6-luna", max_tokens: 32, messages: [] }).store)
+    .toBe(false)
+})

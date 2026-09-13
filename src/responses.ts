@@ -24,6 +24,8 @@ interface ResponsesRequest {
   model: string
   instructions?: string
   input: Array<Record<string, unknown>>
+  /** ChatGPT Codex rejects requests that omit this privacy setting. */
+  store: false
   stream?: boolean
   max_output_tokens?: number
   temperature?: number
@@ -147,6 +149,7 @@ export function toResponsesRequest(
     ...(instructions && { instructions }),
     ...(effort && { reasoning: { effort } }),
     input,
+    store: false,
     stream: payload.stream,
     max_output_tokens: payload.max_tokens,
     temperature: payload.temperature,

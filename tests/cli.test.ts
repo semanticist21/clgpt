@@ -1,7 +1,11 @@
 // The adapter owns a tiny vocabulary; everything dashed belongs to claude and
 // bare words are typos that must fail loudly rather than start a session.
 import { describe, expect, test } from "bun:test"
-import { parseArgs } from "../src/cli"
+import { npmUpdateMessage, parseArgs } from "../src/cli"
+
+test("npm installs have an npm update path", () => {
+  expect(npmUpdateMessage()).toContain("npm install --global clgpt@latest")
+})
 
 describe("parseArgs", () => {
   test("dashed flags pass through to claude", () => {

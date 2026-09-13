@@ -10,7 +10,16 @@ This project is not an OpenAI product and does not use an OpenAI API key.
 ## Install
 
 Requirements: [Claude Code](https://claude.com/claude-code), an eligible
-ChatGPT subscription, and [Bun](https://bun.sh).
+ChatGPT subscription, and [Bun](https://bun.sh). From npm (Bun is still
+required at runtime):
+
+```sh
+npm install --global clgpt
+```
+
+Update npm installs with `npm install --global clgpt@latest`.
+
+Or use the GitHub installer:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/semanticist21/clgpt/main/install.sh | bash
@@ -22,7 +31,9 @@ If Bun is missing, install it yourself:
 curl -fsSL https://bun.sh/install | bash
 ```
 
-Reopen your terminal after installing Bun.
+Reopen your terminal after installing Bun. npm installs the package, but clgpt
+still runs on Bun because the adapter uses Bun's server and process APIs; Node
+is not a runtime fallback yet.
 
 ## First run
 

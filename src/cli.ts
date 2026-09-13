@@ -266,7 +266,7 @@ export async function updateInstall(
   console.error(`... updating: ${dir}`)
   if (bunCommand === "bun" && !Bun.which("bun")) {
     throw new Error(
-      "Bun is required to update clgpt. Install it with `curl -fsSL https://bun.sh/install | bash`, then reopen your terminal.",
+      "Bun is required to update clgpt. Install it with `curl -fsSL https://bun.sh/install | bash`, then reopen your terminal. Node is not a runtime fallback yet.",
     )
   }
 
@@ -456,7 +456,14 @@ export async function updateInstall(
   }
 }
 
+export function npmUpdateMessage(): string {
+  return "This clgpt installation came from npm. Update it with `npm install --global clgpt@latest`."
+}
+
 async function runUpdate(): Promise<void> {
+  if (process.env.CLGPT_NPM_INSTALL === "1") {
+    throw new Error(npmUpdateMessage())
+  }
   const dir = appDir()
   if (!dir) {
     throw new Error(

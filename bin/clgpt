@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CLGPT_LAUNCHER="${BASH_SOURCE[0]}"
+while [ -L "$CLGPT_LAUNCHER" ]; do
+  CLGPT_LAUNCHER_DIR="$(cd -P -- "$(dirname -- "$CLGPT_LAUNCHER")" && pwd)"
+  CLGPT_LAUNCHER="$(readlink -- "$CLGPT_LAUNCHER")"
+  case "$CLGPT_LAUNCHER" in
+    /*) ;;
+    *) CLGPT_LAUNCHER="$CLGPT_LAUNCHER_DIR/$CLGPT_LAUNCHER" ;;
+  esac
+done
+CLGPT_PACKAGE_DIR="$(cd -P -- "$(dirname -- "$CLGPT_LAUNCHER")/.." && pwd)"
+export CLGPT_NPM_INSTALL=1
+CLGPT_BUN_BIN="${CLGPT_BUN_BIN:-$(command -v bun || true)}"
+if [ -z "$CLGPT_BUN_BIN" ]; then
+  printf '%s\n' "Bun is required to run clgpt. Install it with: curl -fsSL https://bun.sh/install | bash" >&2
+  printf '%s\n' "Node is not a runtime fallback yet; see https://bun.sh/docs/installation" >&2
+  exit 1
+fi
+
+if [ "${1:-}" = "--" ]; then
+  shift
+  set -- "__clgpt_passthrough__" "$@"
+fi
+
+exec "$CLGPT_BUN_BIN" run --no-install "$CLGPT_PACKAGE_DIR/src/cli.ts" "$@"

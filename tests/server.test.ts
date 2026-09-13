@@ -21,6 +21,7 @@ const nativeCalls: Array<{
   beta: string | null
   version: string | null
 }> = []
+const responsesCalls: Array<{ model: string; service_tier?: string }> = []
 
 const auth = (server: ServerHandle = adapter) => ({ authorization: `Bearer ${server.token}` })
 /** Every upstream path the adapter actually hit, in order. */
@@ -57,7 +58,9 @@ beforeAll(async () => {
           model: string
           instructions?: string
           input?: unknown[]
+          service_tier?: string
         }
+        responsesCalls.push(body)
         if (req.headers.get("originator") !== "clgpt") {
           return new Response("missing header", { status: 400 })
         }
@@ -577,6 +580,18 @@ describe("adapter server", () => {
     expect(body.content[0]).toEqual({ type: "text", text: "Luna non-stream" })
     expect(body.stop_reason).toBe("end_turn")
     expect(body.usage).toEqual({ input_tokens: 6, output_tokens: 2 })
+  })
+
+  test("Fast mode reaches the Responses upstream as a service tier", async () => {
+    responsesCalls.length = 0
+    const res = await post("/v1/messages", {
+      model: "mock-responses-only",
+      max_tokens: 32,
+      speed: "fast",
+      messages: [{ role: "user", content: "hi" }],
+    })
+    expect(res.status).toBe(200)
+    expect(responsesCalls.at(-1)?.service_tier).toBe("fast")
   })
 
   test("headerless Responses streams are peeked before translation", async () => {

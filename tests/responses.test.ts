@@ -163,6 +163,16 @@ describe("ResponsesEventAdapter", () => {
     expect(toResponsesRequest(base).reasoning).toBeUndefined()
   })
 
+  test("maps Claude Code Fast mode to the Responses service tier", () => {
+    const base = {
+      model: "gpt-6-astra",
+      max_tokens: 8,
+      messages: [{ role: "user" as const, content: "hi" }],
+    }
+    expect(toResponsesRequest({ ...base, speed: "fast" }).service_tier).toBe("fast")
+    expect(toResponsesRequest(base).service_tier).toBeUndefined()
+  })
+
   test("images in tool_result become a placeholder + adjacent input_image user item", () => {
     const out = toResponsesRequest({
       model: "gpt-5.6-luna",

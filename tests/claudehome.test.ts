@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { prepareClaudeHome } from "../src/claudehome"
+import { prepareClaudeHome, readFastModePreference } from "../src/claudehome"
 
 const run = (home: string) => prepareClaudeHome(home)
 
@@ -180,6 +180,20 @@ describe("prepareClaudeHome", () => {
       const s = await lstat(join(dir, name)).catch(() => null)
       expect(s?.isSymbolicLink() ?? false).toBe(false)
     }
+    await rm(home, { recursive: true, force: true })
+  })
+})
+
+describe("readFastModePreference", () => {
+  test("reads a boolean preference and ignores malformed or absent settings", async () => {
+    const home = join(tmpdir(), `clgpt-fast-${Date.now()}`)
+    await mkdir(home, { recursive: true })
+    await writeFile(join(home, "settings.json"), '{ "fastMode": true }')
+    expect(await readFastModePreference(home)).toBe(true)
+    await writeFile(join(home, "settings.json"), '{ "fastMode": "yes" }')
+    expect(await readFastModePreference(home)).toBeUndefined()
+    await writeFile(join(home, "settings.json"), "not json")
+    expect(await readFastModePreference(home)).toBeUndefined()
     await rm(home, { recursive: true, force: true })
   })
 })

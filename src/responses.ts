@@ -32,6 +32,7 @@ interface ResponsesRequest {
   tools?: ResponsesTool[]
   tool_choice?: "auto" | "none" | "required" | { type: "function"; name: string }
   reasoning?: { effort: string }
+  service_tier?: "fast"
 }
 
 export function toResponsesRequest(
@@ -169,6 +170,7 @@ export function toResponsesRequest(
             : payload.tool_choice?.name
               ? { type: "function", name: payload.tool_choice.name }
               : undefined,
+    ...(payload.speed === "fast" ? { service_tier: "fast" as const } : {}),
   }
 }
 

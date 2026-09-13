@@ -36,6 +36,8 @@ export interface AnthropicRequest {
   thinking?: unknown
   /** Claude Code's /effort setting rides here (gateway protocol). */
   output_config?: { effort?: string }
+  /** Claude Code's /fast setting rides here (gateway protocol). */
+  speed?: "fast"
 }
 
 export interface OpenAITextPart {

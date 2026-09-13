@@ -10,6 +10,8 @@ import {
   buildModelOverridesFrom,
   buildModelPickerFrom,
   buildSettingsEnv,
+  compactWindowFor,
+  validateModelSelection,
 } from "../src/spawn"
 
 describe("buildModelPickerFrom", () => {
@@ -92,12 +94,19 @@ describe("buildModelPickerFrom", () => {
     }
   })
 
+  test("GPT rows borrow Opus handling so Claude Code can emit Fast mode", () => {
+    const picker = buildModelPickerFrom([
+      model({ id: "gpt-6-astra", endpoints: ["/responses"] }),
+    ])!
+    expect(picker.options[0]!.behavesAs).toBe("claude-opus-5")
+  })
+
   // [1m] tells Claude Code the model has a 1M window, and server.ts only
   // forwards the matching beta at a real 1M. Claiming it below that told the
   // client 1M while delivering 200k - the two must agree on the threshold.
   test("[1m] is claimed only at a real 1M window", () => {
     const picker = buildModelPickerFrom([
-      model({ id: "small", maxPromptTokens: 12288 }),
+      model({ id: "small", maxPromptTokens: 100000 }),
       model({ id: "mid", maxPromptTokens: 272000 }),
       model({ id: "big", maxPromptTokens: 917504 }),
       model({ id: "huge", maxPromptTokens: 1000000 }),
@@ -107,6 +116,25 @@ describe("buildModelPickerFrom", () => {
     expect(by("mid").model).toBe("mid")
     expect(by("big").model).toBe("big")
     expect(by("huge").model).toBe("huge[1m]")
+  })
+
+  test("hides custom rows below Claude's supported global compact floor", () => {
+    expect(
+      buildModelPickerFrom([model({ id: "tiny-custom", maxPromptTokens: 64000 })]),
+    ).toBeNull()
+  })
+
+  test("rejects a direct selection of a known sub-floor custom model", () => {
+    expect(() =>
+      validateModelSelection("tiny-custom", [
+        model({ id: "tiny-custom", maxPromptTokens: 64000 }),
+      ]),
+    ).toThrow("below Claude Code's 100k compact floor")
+    expect(() =>
+      validateModelSelection("claude-opus-5", [
+        model({ id: "claude-opus-5", maxPromptTokens: 64000 }),
+      ]),
+    ).not.toThrow()
   })
 
   test("models that cannot hold a conversation are excluded", () => {
@@ -141,6 +169,49 @@ describe("buildModelPickerFrom", () => {
     const big = Array.from({ length: 250 }, (_, i) => model({ id: `m-${i}` }))
     expect(buildModelPickerFrom(big)!.options).toHaveLength(200)
   })
+
+  test("computes the cap from the exact filtered and capped selectable rows", () => {
+    const prev = process.env.CLGPT_MIN_WINDOW
+    try {
+      process.env.CLGPT_MIN_WINDOW = "250000"
+      expect(
+        compactWindowFor([
+          model({ id: "gpt-5.6-luna", maxPromptTokens: 200000 }),
+          model({ id: "gpt-6-astra", maxPromptTokens: 272000 }),
+        ]),
+      ).toBe(272000)
+    } finally {
+      if (prev === undefined) delete process.env.CLGPT_MIN_WINDOW
+      else process.env.CLGPT_MIN_WINDOW = prev
+    }
+
+    const wide = Array.from({ length: 200 }, (_, i) =>
+      model({ id: `wide-${i}`, maxPromptTokens: 272000 }),
+    )
+    expect(
+      compactWindowFor([
+        ...wide,
+        model({ id: "hidden-by-picker-limit", maxPromptTokens: 100000 }),
+      ]),
+    ).toBe(272000)
+    expect(compactWindowFor([])).toBe(128000)
+    expect(
+      compactWindowFor([
+        model({ id: "gpt-6-astra", maxPromptTokens: 272000 }),
+        model({ id: "custom-without-window" }),
+      ]),
+    ).toBe(128000)
+    const prevFloor = process.env.CLGPT_MIN_WINDOW
+    try {
+      process.env.CLGPT_MIN_WINDOW = "500000"
+      expect(
+        compactWindowFor([model({ id: "gpt-6-astra", maxPromptTokens: 272000 })]),
+      ).toBe(128000)
+    } finally {
+      if (prevFloor === undefined) delete process.env.CLGPT_MIN_WINDOW
+      else process.env.CLGPT_MIN_WINDOW = prevFloor
+    }
+  })
 })
 
 describe("buildModelOverridesFrom", () => {
@@ -171,6 +242,7 @@ describe("buildSettingsEnv", () => {
     expect(env.ANTHROPIC_MODEL).toBeUndefined()
     expect(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe("200000")
     expect(env.CLAUDE_CODE_DISABLE_THINKING).toBeUndefined()
+    expect(env.CLAUDE_CODE_SKIP_FAST_MODE_ORG_CHECK).toBe("1")
   })
 
   test("translated dialects still suppress thinking", () => {
@@ -235,13 +307,13 @@ describe("duplicate display names", () => {
     const picker = buildModelPickerFrom(
       [m("small", "Small"), m("big", "Big")].map((x, i) => ({
         ...x,
-        maxPromptTokens: i === 0 ? 12288 : 917504,
+        maxPromptTokens: i === 0 ? 100000 : 917504,
       })),
       { sessionWindow: 200000 },
     )!
     const by = (id: string) =>
       picker.options.find((o) => o.description!.startsWith(id))!
-    expect(by("small").description).toContain("! caps at 12k")
+    expect(by("small").description).toContain("! caps at 100k")
     expect(by("big").description).not.toContain("⚠")
   })
 })
@@ -293,6 +365,11 @@ describe("buildSettingsEnv — what must not be there", () => {
     const env = buildSettingsEnv("http://127.0.0.1:1", models, "m", null)
     expect(env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY).toBeUndefined()
   })
+
+  test("skips Claude's organization gate so the upstream can decide Fast mode", () => {
+    const env = buildSettingsEnv("http://127.0.0.1:1", models, "m", null)
+    expect(env.CLAUDE_CODE_SKIP_FAST_MODE_ORG_CHECK).toBe("1")
+  })
 })
 
 // CLAUDE_CONFIG_DIR only moves the USER settings file. Claude Code also reads
@@ -307,8 +384,19 @@ describe("the model clgpt chose has to survive a project settings file", () => {
   const MAPPING = { opus: "o", sonnet: "s", haiku: "h", fable: "f" }
   const settingsOf = (args: string[]) => {
     const i = args.indexOf("--settings")
-    return JSON.parse(args[i + 1]!) as { model?: string }
+    return JSON.parse(args[i + 1]!) as { model?: string; fastMode?: boolean }
   }
+
+  test("preserves an enabled Fast mode preference in the injected settings tier", () => {
+    const args = buildLaunchArgs({
+      baseUrl: "http://127.0.0.1:1",
+      models: MAPPING,
+      defaultModel: "gpt-6-astra",
+      claudeArgs: [],
+      fastMode: true,
+    })
+    expect(settingsOf(args).fastMode).toBe(true)
+  })
 
   test("rides in the settings blob, not only in --model", () => {
     const args = buildLaunchArgs({

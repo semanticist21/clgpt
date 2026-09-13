@@ -19,7 +19,7 @@ import {
   type ModelMapping,
   type UpstreamModel,
 } from "./token"
-import { prepareClaudeHome } from "./claudehome"
+import { prepareClaudeHome, readFastModePreference } from "./claudehome"
 import { normalizeModel } from "./translate"
 import { ONE_MILLION_TOKENS, fallbackInputWindow } from "./tokens"
 
@@ -35,9 +35,39 @@ const INTERNAL_FAMILIES = new Set([
   "exec-agent",
   "trajectory-compaction",
 ])
+const CLAUDE_COMPACT_FLOOR = 100_000
 
 export function windowOf(m: UpstreamModel): number | undefined {
   return m.maxPromptTokens ?? m.maxContextTokens
+}
+
+/** Reject a known custom model that Claude's global compact setting cannot represent. */
+export function validateModelSelection(
+  selected: string | undefined,
+  list: UpstreamModel[],
+): void {
+  if (!selected) return
+  const normalized = normalizeModel(selected)
+  const model = list.find(
+    (candidate) =>
+      normalizeModel(candidate.id) === normalized ||
+      advertisedId(candidate.id) === normalized,
+  )
+  if (!model || advertisedId(model.id)) return
+  const window = windowOf(model)
+  if (window !== undefined && window < CLAUDE_COMPACT_FLOOR) {
+    throw new Error(
+      `model ${selected} has a ${Math.round(window / 1000)}k context window, below Claude Code's 100k compact floor; choose another model`,
+    )
+  }
+}
+
+function smallestWindow(windows: Array<number | undefined>): number {
+  const fallback = fallbackInputWindow([])
+  const safe = windows.map((n) =>
+    n !== undefined && Number.isFinite(n) && n > 0 ? n : fallback,
+  )
+  return safe.length > 0 ? Math.min(...safe) : fallback
 }
 
 export function buildSettingsEnv(
@@ -56,10 +86,14 @@ export function buildSettingsEnv(
   // the adapter forwards thinking blocks untouched; only the translation
   // dialects need them suppressed.
   const native = info?.endpoints.includes("/v1/messages") === true
-  // Prefer the upstream's own prompt budget so auto-compact fires before the
-  // model rejects the conversation.
-  const fallbackWindow = fallbackInputWindow(upstreamModels().filter(conversational).map(windowOf))
-  const window = info?.maxPromptTokens ?? info?.maxContextTokens ?? fallbackWindow
+  const selectedWindow = info?.maxPromptTokens ?? info?.maxContextTokens
+  // An explicit modelMeta is a test/diagnostic override; do not let another
+  // concurrently running test's discovery cache change its result.
+  const compactWindow = modelMeta !== undefined
+    ? modelMeta === null
+      ? fallbackInputWindow([])
+      : Math.max(100_000, smallestWindow([selectedWindow]))
+    : compactWindowFor(upstreamModels())
 
   return {
     ANTHROPIC_BASE_URL: baseUrl,
@@ -85,10 +119,19 @@ export function buildSettingsEnv(
     DISABLE_NON_ESSENTIAL_MODEL_CALLS: "1",
     // Translation dialects drop thinking blocks; the native one keeps them.
     ...(native ? {} : { CLAUDE_CODE_DISABLE_THINKING: "1" }),
+    // The local adapter is not an Anthropic organization, so Claude Code's
+    // client-side entitlement check would hide /fast before the request can
+    // reach the upstream that actually decides whether it is available.
+    CLAUDE_CODE_SKIP_FAST_MODE_ORG_CHECK: "1",
     // Model slugs are unknown to Claude Code's context-window table.
     CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT: "1",
-    // Never inherit a larger user setting than the upstream actually accepts.
-    CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(window),
+    // Custom GPT rows cannot expose their own context window to Claude Code;
+    // this safe ceiling keeps a /model switch from exceeding the smallest
+    // selectable upstream prompt budget. Catalog-known Claude rows use
+    // Claude Code's own per-model context handling instead.
+    ...(compactWindow === undefined
+      ? {}
+      : { CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(compactWindow) }),
     // Slow upstream: never abort a stream for idling.
     API_FORCE_IDLE_TIMEOUT: "0",
     API_TIMEOUT_MS: "3000000",
@@ -200,9 +243,19 @@ export function buildModelPickerFrom(
     const advertised = advertisedId(m.id)
     // A row whose id Claude Code cannot resolve is silently not offered
     // unless it carries `behavesAs`, so every non-catalog row borrows one.
-    const borrowed = advertised ? null : resolveBehavesAs(familyOf(m.id), ids)
+    // Claude Code only emits `speed: "fast"` for rows it recognizes as the
+    // Opus family. GPT rows are the ChatGPT-side equivalent of that role, so
+    // let Fast mode reach the adapter while keeping the actual upstream id.
+    const borrowed = advertised
+      ? null
+      : resolveBehavesAs(m.id.startsWith("gpt-") ? "opus" : familyOf(m.id), ids)
 
     const ctx = windowOf(m)
+    // Claude Code's global auto-compact override cannot represent a window
+    // below 100k. Do not expose a custom row whose known limit is smaller;
+    // catalog-known rows remain safe because Claude owns their per-model
+    // context handling.
+    if (borrowed && ctx !== undefined && ctx < 100_000) continue
     // [1m] is the only per-row window channel the schema has, and it is
     // binary: 200k or 1M, nothing between. The real window goes in the
     // description instead.
@@ -235,6 +288,26 @@ export function buildModelPickerFrom(
   // Only ever set with a non-empty lineup: replacing the built-in options
   // while offering none of our own leaves /model completely empty.
   return { options: options.slice(0, 200), replaceBuiltInOptions: true }
+}
+
+/**
+ * Return a safe session ceiling for the exact rows Claude Code can select.
+ * This intentionally goes through the picker so CLGPT_MIN_WINDOW filtering
+ * and the 200-row limit cannot leave a hidden model lowering the cap.
+ */
+export function compactWindowFor(list: UpstreamModel[]): number | undefined {
+  if (list.length === 0) return fallbackInputWindow([])
+  const picker = buildModelPickerFrom(list)
+  if (!picker) return fallbackInputWindow([])
+  if (!picker.options.some((option) => option.behavesAs)) {
+    return undefined
+  }
+  const byId = new Map(list.map((model) => [normalizeModel(model.id), model]))
+  const windows = picker.options.map((option) => {
+    const model = byId.get(normalizeModel(option.model))
+    return model ? windowOf(model) : undefined
+  })
+  return Math.max(100_000, smallestWindow(windows))
 }
 
 // Selected model first, then native rows, then widest window first.
@@ -277,6 +350,8 @@ export interface LaunchPlan {
   claudeArgs: string[]
   /** The private CLAUDE_CONFIG_DIR, or null when clgpt could not build one. */
   configDir?: string | null
+  /** Preserve Claude Code's user setting for Fast mode in the flag tier. */
+  fastMode?: boolean
   adapterToken?: string
 }
 
@@ -291,6 +366,15 @@ export function buildLaunchArgs(plan: LaunchPlan): string[] {
   const userPickedModel = plan.claudeArgs.some(
     (a) => a === "--model" || a.startsWith("--model="),
   )
+  const userModelIndex = plan.claudeArgs.findIndex(
+    (a) => a === "--model" || a.startsWith("--model="),
+  )
+  const userModel = userModelIndex < 0
+    ? undefined
+    : plan.claudeArgs[userModelIndex]!.startsWith("--model=")
+      ? plan.claudeArgs[userModelIndex]!.slice("--model=".length)
+      : plan.claudeArgs[userModelIndex + 1]
+  validateModelSelection(userModel ?? plan.defaultModel, upstreamModels())
   const env = buildSettingsEnv(plan.baseUrl, plan.models, plan.defaultModel)
   const picker = buildModelPicker(
     plan.defaultModel ?? plan.models.sonnet,
@@ -317,6 +401,7 @@ export function buildLaunchArgs(plan: LaunchPlan): string[] {
     env: { ...env, ...(configDir ? { CLAUDE_CONFIG_DIR: configDir } : {}) },
     ...(picker ? { modelPicker: picker } : {}),
     ...(overrides ? { modelOverrides: overrides } : {}),
+    ...(plan.fastMode === true ? { fastMode: true } : {}),
     ...(userPickedModel || !plan.defaultModel ? {} : { model: plan.defaultModel }),
   })
   // Seeded rather than pinned (see buildSettingsEnv); a --model the user
@@ -331,6 +416,15 @@ export function buildLaunchEnv(
   plan: LaunchPlan,
   extraEnv?: Record<string, string>,
 ): Record<string, string | undefined> {
+  const userModelIndex = plan.claudeArgs.findIndex(
+    (a) => a === "--model" || a.startsWith("--model="),
+  )
+  const userModel = userModelIndex < 0
+    ? undefined
+    : plan.claudeArgs[userModelIndex]!.startsWith("--model=")
+      ? plan.claudeArgs[userModelIndex]!.slice("--model=".length)
+      : plan.claudeArgs[userModelIndex + 1]
+  validateModelSelection(userModel ?? plan.defaultModel, upstreamModels())
   const env = buildSettingsEnv(plan.baseUrl, plan.models, plan.defaultModel)
   const configDir = plan.configDir ?? undefined
   const childEnv: Record<string, string | undefined> = {
@@ -365,7 +459,11 @@ export async function runClaude(opts: {
   // Claude persists a /model pick into its config dir. Give it a private one
   // so that write can never reach the user's ~/.claude.
   const configDir = await prepareClaudeHome()
-  const plan: LaunchPlan = { ...opts, configDir }
+  const plan: LaunchPlan = {
+    ...opts,
+    configDir,
+    fastMode: configDir ? await readFastModePreference(configDir) : undefined,
+  }
   const launchArgs = buildLaunchArgs(plan)
   const childEnv = buildLaunchEnv(plan, opts.extraEnv)
 

@@ -274,3 +274,17 @@ export async function prepareClaudeHome(
 
   return home
 }
+
+/** Read the user's persistent Fast mode preference from the private copy. */
+export async function readFastModePreference(
+  home: string,
+): Promise<boolean | undefined> {
+  try {
+    const parsed = JSON.parse(
+      await readFile(join(home, "settings.json"), "utf8"),
+    ) as { fastMode?: unknown }
+    return typeof parsed.fastMode === "boolean" ? parsed.fastMode : undefined
+  } catch {
+    return undefined
+  }
+}

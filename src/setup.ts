@@ -5,7 +5,7 @@
 import * as p from "@clack/prompts"
 import {
   TOKEN_ENV,
-  browserMcpConfig,
+  combinedMcpConfig,
   extensionInstalled,
   parseToken,
   setupNote,
@@ -13,12 +13,13 @@ import {
 import { loadPrefs, savePrefs, type SetupPrefs } from "./config"
 
 /** Bump when an option is added, so existing users get told once. */
-export const SETUP_VERSION = 2
+export const SETUP_VERSION = 3
 
 export interface SetupOverrides {
   bypass?: boolean
   select?: boolean
   browser?: boolean
+  web?: boolean
 }
 
 // What the first-run prompts come pre-filled with: these are the options
@@ -30,6 +31,7 @@ export const SETUP_DEFAULTS: Omit<SetupPrefs, "version"> = {
   bypass: true,
   select: true,
   browser: true,
+  web: true,
 }
 
 export async function runSetup(): Promise<SetupPrefs> {
@@ -60,6 +62,11 @@ export async function runSetup(): Promise<SetupPrefs> {
   setup.bypass = await ask(
     "Run without permission prompts? (--dangerously-skip-permissions)",
     current.bypass,
+  )
+
+  setup.web = await ask(
+    "Claude built-in web search is unavailable. Replace it with ChatGPT native web search?",
+    current.web ?? (prefs.setup === undefined),
   )
 
   // Claude's own Chrome integration cannot work here, so there is nothing to
@@ -98,7 +105,7 @@ export async function runSetup(): Promise<SetupPrefs> {
   await savePrefs({ ...prefs, setup })
   p.outro(
     "Saved. Re-run `clgpt setup` to change it, or turn one off for a single\n" +
-      "run with --no-bypass / --no-select / --no-browser.",
+      "run with --no-bypass / --no-select / --no-browser / --no-web.",
   )
   return setup
 }
@@ -135,6 +142,8 @@ export function setupClaudeArgs(
   claudeArgs: string[],
   /** Whether the Playwright MCP Bridge extension is installed. */
   browserExtension = false,
+  /** A Responses-capable provider model used by the native search server. */
+  webModel?: string,
 ): string[] {
   if (!setup) return []
   // Match the `--flag=value` form too: an exact comparison let a user's own
@@ -153,12 +162,14 @@ export function setupClaudeArgs(
   }
   // Registered per session rather than written into the user's MCP config, so
   // clgpt never edits configuration that outlives it.
-  if (
-    setup.browser &&
-    overrides.browser !== false &&
-    !has("--mcp-config")
-  ) {
-    const config = browserMcpConfig(browserExtension)
+  const browserRequested = setup.browser && overrides.browser !== false && browserExtension
+  const webRequested = setup.web === true && overrides.web !== false && Boolean(webModel)
+  if ((browserRequested || webRequested) && !has("--mcp-config")) {
+    const config = combinedMcpConfig(
+      browserExtension,
+      setup.web === true && overrides.web !== false,
+      webModel,
+    )
     if (config) out.push("--mcp-config", config)
   }
   return out

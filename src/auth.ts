@@ -257,4 +257,14 @@ export async function ensureOpenAIToken(force = false): Promise<OpenAIIdentity> 
   return runOAuth()
 }
 
+/** MCP must never start an interactive browser flow on its JSON-RPC stdout. */
+export async function ensureOpenAITokenForMcp(): Promise<OpenAIIdentity> {
+  if (isMockMode()) return { access: "mock", refresh: "mock", expires: Date.now() + 3600_000, fresh: false }
+  const saved = await loadAuth()
+  if (!saved) throw new Error("ChatGPT authentication is required; run `clgpt login` before using web tools")
+  if (saved.expires > Date.now() + EXPIRY_MARGIN_MS) return { ...saved, fresh: false }
+  if (!saved.refresh) throw new Error("ChatGPT OAuth session expired; run `clgpt login` before using web tools")
+  try { return { ...(await refreshOpenAIToken(saved)), fresh: false } } catch { throw new Error("ChatGPT OAuth refresh failed; run `clgpt login` before using web tools") }
+}
+
 export { CODEX_API_ENDPOINT }

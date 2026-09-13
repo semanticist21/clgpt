@@ -101,6 +101,8 @@ export interface SetupPrefs {
    * secret — the OAuth credential lives in auth.json.
    */
   browserToken?: string
+  /** Register ChatGPT native web search and the local URL fetcher. */
+  web?: boolean
 }
 
 export interface Prefs {

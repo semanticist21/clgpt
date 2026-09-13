@@ -42,7 +42,8 @@ clgpt
 ```
 
 The first run opens a browser for ChatGPT OAuth, then asks whether to bypass
-permission prompts, enable Playwright browser control, and choose a model on
+permission prompts, replace Claude's unavailable built-in web search with
+ChatGPT native search, enable Playwright browser control, and choose a model on
 each start. Tokens are stored in `~/.config/clgpt/auth.json` with mode 600;
 the Codex CLI cache is not read or shared.
 
@@ -56,9 +57,19 @@ clgpt setup       # change startup defaults
 clgpt update      # update after a staged install check
 ```
 
-`clgpt --no-bypass`, `clgpt --no-browser`, and `clgpt --no-select` override a
-saved default for one run. `CLGPT_MODELS` can restrict the local allowlisted
+`clgpt --no-bypass`, `clgpt --no-browser`, `clgpt --no-web`, and
+`clgpt --no-select` override a saved default for one run. `CLGPT_MODELS` can restrict the local allowlisted
 GPT catalog with comma-separated ids.
+
+## Web access
+
+The optional web integration registers two session-only local MCP tools:
+provider-native `web_search` and a safe `web_fetch` for public HTML, text,
+JSON, and PDF URLs. It does not use an API key, browser cookies, Jina,
+Firecrawl, or a hidden browser fallback. `web_fetch` blocks private targets,
+re-checks redirects, limits responses to 5 MB, and reports JavaScript-only
+pages clearly so browser control remains a separate choice. Existing installs
+keep this off until `clgpt setup` is run; use `clgpt --no-web` for one run.
 
 ## Browser control
 

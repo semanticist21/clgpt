@@ -54,8 +54,8 @@ describe("parseArgs — setup", () => {
   })
 
   test("consumes --no-* instead of passing it to claude", () => {
-    const args = parseArgs(["--no-browser", "--no-bypass"])
-    expect(args.overrides).toEqual({ browser: false, bypass: false })
+    const args = parseArgs(["--no-browser", "--no-bypass", "--no-web"])
+    expect(args.overrides).toEqual({ browser: false, bypass: false, web: false })
     expect(args.claudeArgs).toEqual([])
   })
 

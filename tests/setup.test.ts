@@ -6,6 +6,7 @@ import {
   EXTENSION_URL,
   MCP_PACKAGE,
   browserMcpConfig,
+  combinedMcpConfig,
   extensionHint,
   extensionInstalled,
   parseToken,
@@ -40,6 +41,14 @@ const saved = (over: Partial<Record<string, boolean>> = {}) => ({
   select: true,
   browser: false,
   ...over,
+})
+
+test("web setup registers both local tools without browser control", () => {
+  const config = JSON.parse(combinedMcpConfig(false, true, "gpt-4.1")!)
+  expect(config.mcpServers.clgpt_web.args[0]).toContain("webmcp.ts")
+  expect(config.mcpServers.clgpt_web.env).toEqual({ CLGPT_WEB_MODEL: "gpt-4.1" })
+  expect(setupClaudeArgs(saved({ web: true }), {}, [], false, "gpt-4.1")).toContain("--mcp-config")
+  expect(setupClaudeArgs(saved({ web: true }), { web: false }, [], false, "gpt-4.1")).toEqual(["--dangerously-skip-permissions"])
 })
 
 describe("setupClaudeArgs", () => {
@@ -92,6 +101,7 @@ describe("defaults", () => {
       bypass: true,
       select: true,
       browser: true,
+      web: true,
     })
   })
 })

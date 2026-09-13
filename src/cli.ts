@@ -83,6 +83,7 @@ const COMMANDS: ReadonlyArray<[string, string]> = [
   ["clgpt --no-bypass", "Re-enable permission prompts for this run"],
   ["clgpt --no-select", "Skip the model prompt for this run"],
   ["clgpt --no-browser", "Skip Playwright MCP for this run"],
+  ["clgpt --no-web", "Skip native web search and URL fetch for this run"],
 ]
 
 const ENVIRONMENT: ReadonlyArray<[string, string]> = [
@@ -99,6 +100,11 @@ const ENVIRONMENT: ReadonlyArray<[string, string]> = [
 
 const pad = (rows: ReadonlyArray<[string, string]>, width: number) =>
   rows.map(([k, v]) => `  ${k.padEnd(width)} ${v}`).join("\n")
+
+function nativeWebModel(models: ReadonlyArray<{ id: string; endpoints: string[]; type?: string; policyState?: string; pickerEnabled?: boolean }>): string | undefined {
+  const responses = models.filter((model) => model.type !== "embedding" && model.endpoints.some((endpoint) => endpoint.includes("responses")))
+  return responses.find((model) => model.policyState !== "disabled" && model.pickerEnabled !== false)?.id ?? responses[0]?.id
+}
 
 export const COMMAND_LIST = `Commands:\n${pad(COMMANDS, 20)}`
 
@@ -159,7 +165,8 @@ export function parseArgs(rawArgv: string[]): Args {
     if (
       arg === "--no-bypass" ||
       arg === "--no-select" ||
-      arg === "--no-browser"
+      arg === "--no-browser" ||
+      arg === "--no-web"
     ) {
       overrides[arg.slice(5) as keyof SetupOverrides] = false
       i++
@@ -845,6 +852,7 @@ async function main(): Promise<void> {
   }
   const browserEnabled =
     setup?.browser === true && args.overrides.browser !== false
+  const webEnabled = setup?.web === true && args.overrides.web !== false
   const browserExtension = browserEnabled ? await extensionInstalled() : false
   // Computed from the arguments actually produced: clgpt stands aside when the
   // user passes their own --mcp-config, and claiming success there would be
@@ -854,6 +862,7 @@ async function main(): Promise<void> {
     args.overrides,
     args.claudeArgs,
     browserExtension,
+    nativeWebModel(list),
   )
   const registered = injected.includes("--mcp-config")
   const browserLine = startupLine(
@@ -870,6 +879,15 @@ async function main(): Promise<void> {
     browserEnabled && browserExtension ? registered : undefined,
   )
   if (browserLine) console.error(browserLine)
+  console.error(
+    webEnabled && !nativeWebModel(list)
+      ? "+ web: unavailable (the provider exposed no Responses-capable model)"
+      : webEnabled && injected.includes("--mcp-config")
+      ? "+ web: native search + local fetch registered (provider auth stays in its existing store)"
+      : webEnabled
+        ? "+ web: enabled in setup, but not registered because --mcp-config was supplied"
+        : "+ web: disabled (run `clgpt setup` to enable)",
+  )
 
   if (args.command === "serve") {
     console.error("Adapter running... (Ctrl+C to stop)")

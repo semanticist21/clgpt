@@ -5,6 +5,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import {
+  peekHeaderlessSse,
   sanitizeBeta,
   startServer,
   setAdapterLogSink,
@@ -73,9 +74,14 @@ beforeAll(async () => {
             "data: [DONE]",
             "",
           ].join("\n")
-          return new Response(lines, {
-            headers: { "content-type": "text/event-stream" },
-          })
+          // The real ChatGPT Codex Responses endpoint sends SSE without a
+          // Content-Type header.
+          return new Response(new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(lines))
+              controller.close()
+            },
+          }))
         }
         return Response.json({
           id: "resp1",
@@ -571,6 +577,62 @@ describe("adapter server", () => {
     expect(body.content[0]).toEqual({ type: "text", text: "Luna non-stream" })
     expect(body.stop_reason).toBe("end_turn")
     expect(body.usage).toEqual({ input_tokens: 6, output_tokens: 2 })
+  })
+
+  test("headerless Responses streams are peeked before translation", async () => {
+    const sse = new Response('event: response.created\ndata: {"type":"response.created"}\n\n')
+    sse.headers.delete("content-type")
+    const checked = await peekHeaderlessSse(sse)
+    expect(checked).not.toBeNull()
+    expect(await checked!.text()).toContain("event: response.created")
+
+    const html = new Response("<html>gateway error</html>")
+    html.headers.delete("content-type")
+    expect(await peekHeaderlessSse(html)).toBeNull()
+
+    const invalid = new Response("data: gateway error\n\n")
+    invalid.headers.delete("content-type")
+    expect(await peekHeaderlessSse(invalid)).toBeNull()
+
+    const oversized = new Uint8Array(64 * 1024)
+    const frame = new TextEncoder().encode('data: {"type":"response.created"}\n\n')
+    oversized.set(frame)
+    const large = new Response(oversized)
+    large.headers.delete("content-type")
+    const checkedLarge = await peekHeaderlessSse(large)
+    expect(checkedLarge).not.toBeNull()
+    expect((await checkedLarge!.arrayBuffer()).byteLength).toBe(oversized.byteLength)
+  })
+
+  test("headerless non-SSE Responses bodies map to terminal 502", async () => {
+    const mock = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: () => new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("<html>gateway error</html>"))
+          controller.close()
+        },
+      })),
+    })
+    const server = await startServer({ upstream: mock.url.origin })
+    try {
+      const res = await fetch(`${server.url}/v1/messages`, {
+        method: "POST",
+        headers: { ...auth(server), "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "mock-responses-only",
+          max_tokens: 32,
+          stream: true,
+          messages: [{ role: "user", content: "hi" }],
+        }),
+      })
+      expect(res.status).toBe(502)
+      expect((await res.json()).error.message).toContain("non-streaming body")
+    } finally {
+      server.stop()
+      mock.stop(true)
+    }
   })
 
   test("native models stream straight through, untranslated", async () => {

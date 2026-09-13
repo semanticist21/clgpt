@@ -435,6 +435,88 @@ function sseResponse(
   })
 }
 
+const HEADERLESS_SSE_PEEK_BYTES = 16 * 1024
+
+function hasResponsesSseFrame(text: string): boolean {
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.startsWith("data:")) continue
+    const data = line.slice(5).trim()
+    if (!data || data === "[DONE]") continue
+    try {
+      const event = JSON.parse(data) as { type?: unknown }
+      if (event && typeof event === "object" && typeof event.type === "string") return true
+    } catch {
+      // Keep peeking in case the JSON line was split across upstream chunks.
+    }
+  }
+  return false
+}
+
+/**
+ * The Codex Responses endpoint omits Content-Type, so validate a bounded
+ * prefix before handing it to the streaming translator. The prefix is then
+ * replayed so no event is lost.
+ */
+export async function peekHeaderlessSse(upstream: Response): Promise<Response | null> {
+  if (!upstream.body) return null
+  const reader = upstream.body.getReader()
+  const chunks: Uint8Array[] = []
+  let inspectedBytes = 0
+  let framing = ""
+  const decoder = new TextDecoder()
+
+  try {
+    while (inspectedBytes < HEADERLESS_SSE_PEEK_BYTES) {
+      const { done, value } = await reader.read()
+      if (done) {
+        framing += decoder.decode()
+        break
+      }
+      if (!value?.length) continue
+      chunks.push(value)
+      const sample = value.subarray(0, HEADERLESS_SSE_PEEK_BYTES - inspectedBytes)
+      inspectedBytes += sample.length
+      framing += decoder.decode(sample, { stream: true })
+      if (hasResponsesSseFrame(framing)) break
+      // Do not inspect beyond the bounded prefix. The complete chunk remains
+      // in `chunks` and will be replayed if a valid frame was found earlier.
+      if (sample.length < value.length) break
+    }
+  } catch {
+    await reader.cancel().catch(() => {})
+    return null
+  }
+
+  if (!hasResponsesSseFrame(framing)) {
+    await reader.cancel().catch(() => {})
+    return null
+  }
+
+  const replay = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        for (const chunk of chunks) controller.enqueue(chunk)
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          if (value?.length) controller.enqueue(value)
+        }
+        controller.close()
+      } catch (error) {
+        controller.error(error)
+      }
+    },
+    cancel() {
+      reader.cancel().catch(() => {})
+    },
+  })
+  return new Response(replay, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers: upstream.headers,
+  })
+}
+
 async function handleMessages(
   req: Request,
   upstreamBase: string,
@@ -570,7 +652,16 @@ async function handleMessages(
 
   // A 200 that is not actually an SSE stream is an error body, not a message.
   const contentType = res.headers.get("content-type") ?? ""
-  if (!contentType.includes("text/event-stream")) {
+  let streamResponse = res
+  if (!contentType.includes("text/event-stream") && result.dialect === "responses" && !contentType) {
+    streamResponse = await peekHeaderlessSse(res) ?? res
+    if (streamResponse === res) {
+      logLine(
+        `[${timestamp()}]   -> 200 non-SSE body: ${contentType} (${Date.now() - started}ms)`,
+      )
+      return anthropicError(502, "upstream returned non-streaming body")
+    }
+  } else if (!contentType.includes("text/event-stream")) {
     const detail = (await res.text()).slice(0, 500)
     logLine(
       `[${timestamp()}]   -> 200 non-SSE body: ${contentType} (${Date.now() - started}ms)`,
@@ -579,7 +670,7 @@ async function handleMessages(
   }
 
   logLine(`[${timestamp()}]   -> 200 streaming (${result.dialect})`)
-  return sseResponse(res, upstreamPayload.model, result.dialect)
+  return sseResponse(streamResponse, upstreamPayload.model, result.dialect)
 }
 
 // Bun derives req.url from the client-supplied Host header, so comparing

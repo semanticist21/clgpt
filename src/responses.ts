@@ -27,7 +27,6 @@ interface ResponsesRequest {
   /** ChatGPT Codex rejects requests that omit this privacy setting. */
   store: false
   stream?: boolean
-  max_output_tokens?: number
   temperature?: number
   top_p?: number
   tools?: ResponsesTool[]
@@ -151,7 +150,6 @@ export function toResponsesRequest(
     input,
     store: false,
     stream: payload.stream,
-    max_output_tokens: payload.max_tokens,
     temperature: payload.temperature,
     top_p: payload.top_p,
     tools: payload.tools?.map((t) => ({

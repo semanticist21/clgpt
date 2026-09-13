@@ -97,9 +97,6 @@ export function buildSettingsEnv(
 
   return {
     ANTHROPIC_BASE_URL: baseUrl,
-    // Keep the bearer token in the child environment only. Putting it in the
-    // --settings JSON makes it visible in the Claude process argv to other
-    // local users; buildLaunchEnv adds it after this settings blob is built.
     // ANTHROPIC_MODEL is deliberately NOT set: it pins the session model, so
     // claude reports "ANTHROPIC_MODEL is set to X — new sessions use that
     // while it is set" and every /model switch becomes cosmetic. The startup
@@ -376,6 +373,17 @@ export function buildLaunchArgs(plan: LaunchPlan): string[] {
       : plan.claudeArgs[userModelIndex + 1]
   validateModelSelection(userModel ?? plan.defaultModel, upstreamModels())
   const env = buildSettingsEnv(plan.baseUrl, plan.models, plan.defaultModel)
+  // The bearer must ride in the --settings tier, not just the child
+  // environment. Claude's TUI applies the user's own settings.json env over
+  // the child environment - the same file the model key fought above, reached
+  // through the project tier when the cwd is the home directory - so an
+  // env-only token is silently replaced by a provider credential and every
+  // request 401s ("missing or invalid adapter token"). Observed 2026-09-13:
+  // the adapter logged the user's z.ai token arriving in place of clgpt's.
+  // Same tradeoff clco makes: the value only unlocks the localhost adapter,
+  // it is random per run, and the --settings tier outranks every settings
+  // file. buildLaunchEnv keeps the child-env copy too.
+  if (plan.adapterToken) env.ANTHROPIC_AUTH_TOKEN = plan.adapterToken
   const picker = buildModelPicker(
     plan.defaultModel ?? plan.models.sonnet,
     Number(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW),

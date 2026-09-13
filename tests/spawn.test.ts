@@ -265,7 +265,7 @@ describe("buildSettingsEnv", () => {
 })
 
 describe("adapter token placement", () => {
-  test("keeps the bearer out of Claude argv while passing it to the child", () => {
+  test("rides in the --settings tier so no settings file can outvote it", () => {
     const plan = {
       baseUrl: "http://127.0.0.1:1",
       models: { opus: "o", sonnet: "s", haiku: "h", fable: "f" },
@@ -273,9 +273,24 @@ describe("adapter token placement", () => {
       claudeArgs: [],
       adapterToken: "random-per-run-token",
     }
-    const args = buildLaunchArgs(plan)
-    expect(args.join(" ")).not.toContain(plan.adapterToken)
+    // Claude's TUI applies the user's own settings.json env over the child
+    // environment, so an env-only token gets replaced by a provider
+    // credential mid-flight. The --settings tier is the one that wins.
+    const settingsArg = buildLaunchArgs(plan).find((a) => a.startsWith("{"))
+    expect(settingsArg).toBeDefined()
+    expect(JSON.parse(settingsArg!).env.ANTHROPIC_AUTH_TOKEN).toBe(plan.adapterToken)
     expect(buildLaunchEnv(plan).ANTHROPIC_AUTH_TOKEN).toBe(plan.adapterToken)
+  })
+
+  test("omits the token from the blob when there is none", () => {
+    const args = buildLaunchArgs({
+      baseUrl: "http://127.0.0.1:1",
+      models: { opus: "o", sonnet: "s", haiku: "h", fable: "f" },
+      defaultModel: "gpt-5.6-luna",
+      claudeArgs: [],
+    })
+    const settings = JSON.parse(args.find((a) => a.startsWith("{"))!)
+    expect(settings.env.ANTHROPIC_AUTH_TOKEN).toBeUndefined()
   })
 })
 

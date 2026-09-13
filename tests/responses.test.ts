@@ -27,6 +27,20 @@ describe("toResponsesRequest", () => {
     expect(req.tools![0].name).toBe("read_file")
   })
 
+  test("degrades a tool_choice pinned to a dropped server tool", () => {
+    const req = toResponsesRequest({
+      model: "gpt-5.6-luna",
+      max_tokens: 1,
+      messages: [],
+      tools: [
+        { name: "web_search", type: "web_search_20250305" },
+        { name: "read_file", description: "reads", input_schema: { type: "object", properties: {} } },
+      ],
+      tool_choice: { type: "tool", name: "web_search" },
+    } as unknown as AnthropicRequest)
+    expect(req.tool_choice).toBe("auto")
+  })
+
   test("normalizes advertised aliases and bracket suffixes", () => {
     setModelAliases(new Map([["advertised-gpt", "gpt-upstream"]]))
     try {

@@ -10,6 +10,20 @@ import {
 } from "../src/translate"
 
 describe("translateRequest", () => {
+  test("degrades a tool_choice pinned to a schema-less server tool", () => {
+    const out = translateRequest({
+      model: "claude-sonnet-4.5",
+      max_tokens: 100,
+      messages: [{ role: "user", content: "hi" }],
+      tools: [
+        { name: "web_search", type: "web_search_20250305" },
+        { name: "read_file", description: "reads", input_schema: { type: "object", properties: {} } },
+      ],
+      tool_choice: { type: "tool", name: "web_search" },
+    } as unknown as Parameters<typeof translateRequest>[0])
+    expect(out.tool_choice).toBe("auto")
+  })
+
   test("merges system blocks into a single system message", () => {
     const out = translateRequest({
       model: "claude-sonnet-4.5",

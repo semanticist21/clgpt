@@ -253,6 +253,7 @@ function translateTools(
 
 function translateToolChoice(
   choice: AnthropicRequest["tool_choice"],
+  servableNames: Set<string>,
 ): OpenAIRequest["tool_choice"] {
   if (!choice) return undefined
   switch (choice.type) {
@@ -263,9 +264,12 @@ function translateToolChoice(
     case "none":
       return "none"
     case "tool":
-      return choice.name
+      // A pinned tool that was dropped (Claude's built-in server-side ones
+      // carry no input_schema) must degrade to "auto", or the upstream
+      // rejects with "tool choice not found in tools".
+      return choice.name && servableNames.has(choice.name)
         ? { type: "function", function: { name: choice.name } }
-        : undefined
+        : "auto"
     default:
       return undefined
   }
@@ -302,7 +306,14 @@ export function translateRequest(
     top_p: payload.top_p,
     user: payload.metadata?.user_id ?? null,
     tools: translateTools(payload.tools),
-    tool_choice: translateToolChoice(payload.tool_choice),
+    tool_choice: translateToolChoice(
+      payload.tool_choice,
+      new Set(
+        (payload.tools ?? [])
+          .filter((tool) => tool.input_schema)
+          .map((tool) => tool.name),
+      ),
+    ),
   }
 }
 

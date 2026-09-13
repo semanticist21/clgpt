@@ -12,6 +12,7 @@ import {
   isMockMode,
 } from "./api"
 import { isTlsTrustError, tlsHint } from "./tls"
+import type { ModelMapping } from "./token"
 import {
   getOpenAIToken,
   getOpenAIIdentity,
@@ -43,6 +44,30 @@ export interface ServerOptions {
   /** Override the ChatGPT base URL (tests inject a mock directly).
    *  Implies mock-token mode: no browser OAuth is attempted. */
   upstream?: string
+  /** The session's slot mapping. Requests naming a model outside the
+   *  catalog (Claude's own subagents send "claude-haiku-4.5" etc.) are
+   *  remapped to their tier's slot instead of failing upstream. */
+  models?: ModelMapping
+}
+
+/**
+ * Map a model name clgpt never advertised onto the session's slots. Claude
+ * Code's subagents name their small model directly ("claude-haiku-4.5"),
+ * which no catalog row matches; the tier word is what the session mapping
+ * is for. Unknown names without a tier word pass through untouched.
+ */
+export function remapToSessionSlot(model: string, models: ModelMapping): string {
+  if (modelInfo(model)) return model
+  const tier = /haiku/i.test(model)
+    ? models.haiku
+    : /sonnet/i.test(model)
+      ? models.sonnet
+      : /opus/i.test(model)
+        ? models.opus
+        : /fable/i.test(model)
+          ? models.fable
+          : undefined
+  return tier ?? model
 }
 
 // Token injected into claude via ANTHROPIC_AUTH_TOKEN; requests without it
@@ -522,6 +547,7 @@ async function handleMessages(
   req: Request,
   upstreamBase: string,
   mockToken: boolean,
+  sessionModels?: ModelMapping,
 ): Promise<Response> {
   const started = Date.now()
   // Read the body as text so the native path can forward it essentially
@@ -540,6 +566,7 @@ async function handleMessages(
     `[${timestamp()}] POST /v1/messages model=${safeLogModel(payload.model)} stream=${stream}`,
   )
 
+  if (sessionModels) payload.model = remapToSessionSlot(normalizeModel(payload.model), sessionModels)
   const info = modelInfo(normalizeModel(payload.model))
   if (!isMockMode() && !info) {
     return anthropicError(400, "model is not in clgpt's allowlisted ChatGPT catalog")
@@ -698,6 +725,7 @@ async function handle(
   mockToken: boolean,
   selfHost: string,
   localToken: string,
+  sessionModels?: ModelMapping,
 ): Promise<Response> {
   const url = new URL(req.url)
   const path = url.pathname
@@ -752,7 +780,7 @@ async function handle(
     }
   }
 
-  return handleMessages(req, upstreamBase, mockToken)
+  return handleMessages(req, upstreamBase, mockToken, sessionModels)
 }
 
 export async function startServer(
@@ -760,14 +788,19 @@ export async function startServer(
 ): Promise<ServerHandle> {
   const upstreamBase = (opts.upstream ?? openaiBaseUrl()).replace(/\/$/, "")
   const mockToken = opts.upstream !== undefined || isMockMode()
+  const sessionModels = opts.models
   const localToken = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url")
   // Filled in once the port is bound; the fetch closure only runs afterwards.
   let selfHost = ""
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: opts.port ?? 0,
+    // Native web search and search-planner calls can hold the client
+    // socket silent for the whole upstream generation; Bun's 10s default
+    // killed those requests.
+    idleTimeout: 255,
     fetch: (req) =>
-      handle(req, upstreamBase, mockToken, selfHost, localToken).catch((err) =>
+      handle(req, upstreamBase, mockToken, selfHost, localToken, sessionModels).catch((err) =>
         anthropicError(500, String(err)),
       ),
   })

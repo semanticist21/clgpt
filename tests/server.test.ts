@@ -4,6 +4,7 @@
 // terminal chunks), count_tokens, and error mapping — no ChatGPT auth.
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { remapToSessionSlot } from "../src/server"
 import {
   peekHeaderlessSse,
   sanitizeBeta,
@@ -931,5 +932,17 @@ describe("auth retry across dialect fallbacks", () => {
       server.stop()
       mock.stop(true)
     }
+  })
+})
+
+describe("remapToSessionSlot", () => {
+  const models = { opus: "gpt-6-astra", sonnet: "gpt-6-astra", haiku: "gpt-5.6-luna", fable: "gpt-6-astra" }
+  test("maps Claude's subagent model names onto the session slots", () => {
+    expect(remapToSessionSlot("claude-haiku-4.5", models)).toBe("gpt-5.6-luna")
+    expect(remapToSessionSlot("claude-sonnet-5", models)).toBe("gpt-6-astra")
+  })
+  test("leaves catalog models and tier-less unknowns alone", () => {
+    expect(remapToSessionSlot("gpt-5.3-codex-spark", models)).toBe("gpt-5.3-codex-spark")
+    expect(remapToSessionSlot("mystery-model", models)).toBe("mystery-model")
   })
 })

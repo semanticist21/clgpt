@@ -822,7 +822,7 @@ async function main(): Promise<void> {
     defaultModel = modelWithoutPrompt(remembered, offered, models.sonnet)
   }
 
-  const server = await startServer({ port: args.port })
+  const server = await startServer({ port: args.port, models })
   if (args.command === "run") {
     // claude's TUI owns the terminal; adapter request logs must not paint
     // over it. Debug mode appends them to a file instead.
@@ -853,7 +853,8 @@ async function main(): Promise<void> {
   }
   const browserEnabled =
     setup?.browser === true && args.overrides.browser !== false
-  const webEnabled = setup?.web === true && args.overrides.web !== false
+  // Web is on unless the user turned it off; absent prefs mean on.
+  const webEnabled = setup?.web !== false && args.overrides.web !== false
   const browserExtension = browserEnabled ? await extensionInstalled() : false
   // Computed from the arguments actually produced: clgpt stands aside when the
   // user passes their own --mcp-config, and claiming success there would be

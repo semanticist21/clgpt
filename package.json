@@ -1,6 +1,6 @@
 {
   "name": "@semanticist14/clgpt",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
   "type": "module",
   "description": "Run Claude Code with a ChatGPT subscription through an unofficial OAuth adapter",

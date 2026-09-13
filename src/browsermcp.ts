@@ -222,25 +222,10 @@ export function browserMcpConfig(
 }
 
 /** Compose the session-only MCP config without replacing a user's config file. */
-export function combinedMcpConfig(
-  browserInstalled: boolean,
-  webEnabled: boolean,
-  webModel?: string,
-): string | null {
-  const browser = browserMcpConfig(browserInstalled)
-  const mcpServers: Record<string, unknown> = browser
-    ? ((JSON.parse(browser) as { mcpServers: Record<string, unknown> }).mcpServers)
-    : {}
-  if (webEnabled) {
-    const env: Record<string, string> = {}
-    if (webModel) env.CLGPT_WEB_MODEL = webModel
-    mcpServers.clgpt_web = {
-      command: process.execPath,
-      args: [join(import.meta.dir, "webmcp.ts")],
-      ...(Object.keys(env).length > 0 ? { env } : {}),
-    }
-  }
-  return Object.keys(mcpServers).length > 0 ? JSON.stringify({ mcpServers }) : null
+export function combinedMcpConfig(browserInstalled: boolean): string | null {
+  // Web needs no MCP server: the adapter maps Claude's built-in WebSearch
+  // onto the upstream's native web_search tool (responses.ts).
+  return browserMcpConfig(browserInstalled)
 }
 
 // The extension mints a base64url value; nothing else should be accepted.

@@ -142,8 +142,6 @@ export function setupClaudeArgs(
   claudeArgs: string[],
   /** Whether the Playwright MCP Bridge extension is installed. */
   browserExtension = false,
-  /** A Responses-capable provider model used by the native search server. */
-  webModel?: string,
 ): string[] {
   if (!setup) return []
   // Match the `--flag=value` form too: an exact comparison let a user's own
@@ -163,13 +161,8 @@ export function setupClaudeArgs(
   // Registered per session rather than written into the user's MCP config, so
   // clgpt never edits configuration that outlives it.
   const browserRequested = setup.browser && overrides.browser !== false && browserExtension
-  const webRequested = setup.web === true && overrides.web !== false && Boolean(webModel)
-  if ((browserRequested || webRequested) && !has("--mcp-config")) {
-    const config = combinedMcpConfig(
-      browserExtension,
-      setup.web === true && overrides.web !== false,
-      webModel,
-    )
+  if (browserRequested && !has("--mcp-config")) {
+    const config = combinedMcpConfig(browserExtension)
     if (config) out.push("--mcp-config", config)
   }
   return out

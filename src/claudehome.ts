@@ -55,7 +55,7 @@ const PRIVATE_ENTRIES = new Set([
  * environment, so a surviving token would override clgpt's and every request
  * would 401 against the adapter.
  */
-const ROUTING_ENV = /^ANTHROPIC_(AUTH_TOKEN|API_KEY|BASE_URL)$/
+const ROUTING_ENV = /^ANTHROPIC_(AUTH_TOKEN|API_KEY|BASE_URL|MODEL)$/
 function stripRoutingEnv(parsed: Record<string, unknown>): void {
   const env = parsed.env as Record<string, unknown> | undefined
   if (env && typeof env === "object" && !Array.isArray(env)) {

@@ -63,13 +63,14 @@ GPT catalog with comma-separated ids.
 
 ## Web access
 
-The optional web integration registers two session-only local MCP tools:
-provider-native `web_search` and a safe `web_fetch` for public HTML, text,
-JSON, and PDF URLs. It does not use an API key, browser cookies, Jina,
-Firecrawl, or a hidden browser fallback. `web_fetch` blocks private targets,
-re-checks redirects, limits responses to 5 MB, and reports JavaScript-only
-pages clearly so browser control remains a separate choice. Existing installs
-keep this off until `clgpt setup` is run; use `clgpt --no-web` for one run.
+Claude's built-in WebSearch cannot work through an adapter: Anthropic executes
+it server-side. With the web integration enabled, clgpt's adapter maps that
+tool onto ChatGPT's native `web_search` instead, so the search executes
+upstream and real results come back through Claude's own WebSearch. Claude's
+built-in Fetch keeps working as-is: it fetches pages locally and only the
+summarizing model call rides the adapter. No MCP server, no API key.
+Existing installs keep this off until `clgpt setup` is run; use
+`clgpt --no-web` for one run.
 
 ## Browser control
 

@@ -20,6 +20,7 @@ import {
   upstreamModels,
 } from "./token"
 import { setAdapterLogSink, startServer } from "./server"
+import { setWebSearchMapping } from "./responses"
 import { buildModelPickerFrom, resolveClaude, runClaude } from "./spawn"
 import { isTlsTrustError, tlsHint } from "./tls"
 import {
@@ -857,13 +858,7 @@ async function main(): Promise<void> {
   // Computed from the arguments actually produced: clgpt stands aside when the
   // user passes their own --mcp-config, and claiming success there would be
   // the same trap as registering a server with no extension.
-  const injected = setupClaudeArgs(
-    setup,
-    args.overrides,
-    args.claudeArgs,
-    browserExtension,
-    nativeWebModel(list),
-  )
+  const injected = setupClaudeArgs(setup, args.overrides, args.claudeArgs, browserExtension)
   const registered = injected.includes("--mcp-config")
   const browserLine = startupLine(
     browserEnabled,
@@ -879,14 +874,14 @@ async function main(): Promise<void> {
     browserEnabled && browserExtension ? registered : undefined,
   )
   if (browserLine) console.error(browserLine)
+  const webSearchMapped = webEnabled && Boolean(nativeWebModel(list))
+  setWebSearchMapping(webSearchMapped)
   console.error(
     webEnabled && !nativeWebModel(list)
       ? "+ web: unavailable (the provider exposed no Responses-capable model)"
-      : webEnabled && injected.includes("--mcp-config")
-      ? "+ web: native search + local fetch registered (provider auth stays in its existing store)"
-      : webEnabled
-        ? "+ web: enabled in setup, but not registered because --mcp-config was supplied"
-        : "+ web: disabled (run `clgpt setup` to enable)",
+      : webSearchMapped
+      ? "+ web: WebSearch answered by ChatGPT native search (no MCP server)"
+      : "+ web: disabled (run `clgpt setup` to enable)",
   )
 
   if (args.command === "serve") {

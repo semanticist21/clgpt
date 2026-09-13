@@ -18,7 +18,10 @@ export interface AnthropicMessage {
 export interface AnthropicTool {
   name: string
   description?: string
-  input_schema: Record<string, unknown>
+  // Server-side built-ins (WebSearch, WebFetch) carry a type like
+  // "web_search_20250305" and no input_schema at all.
+  type?: string
+  input_schema?: Record<string, unknown>
 }
 
 export interface AnthropicRequest {

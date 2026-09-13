@@ -3,6 +3,7 @@
 
 import { describe, expect, test } from "bun:test"
 import { setModelAliases } from "../src/translate"
+import { setWebSearchMapping } from "../src/responses"
 import type { AnthropicRequest } from "../src/wire"
 import {
   toResponsesRequest,
@@ -12,6 +13,7 @@ import {
 
 describe("toResponsesRequest", () => {
   test("drops Claude's built-in server tools instead of crashing on them", () => {
+    setWebSearchMapping(true)
     // Claude Code sends WebSearch/WebFetch as server-side tools with no
     // input_schema; they cannot be served as upstream function tools.
     const req = toResponsesRequest({
@@ -23,11 +25,14 @@ describe("toResponsesRequest", () => {
         { name: "read_file", description: "reads", input_schema: { type: "object", properties: {} } },
       ],
     } as unknown as AnthropicRequest)
-    expect(req.tools).toHaveLength(1)
-    expect(req.tools![0].name).toBe("read_file")
+    // WebSearch maps to the native upstream tool instead of being dropped.
+    expect(req.tools).toHaveLength(2)
+    expect((req.tools![0] as { name: string }).name).toBe("read_file")
+    expect(req.tools![1]).toEqual({ type: "web_search" })
   })
 
   test("degrades a tool_choice pinned to a dropped server tool", () => {
+    setWebSearchMapping(true)
     const req = toResponsesRequest({
       model: "gpt-5.6-luna",
       max_tokens: 1,
@@ -38,7 +43,21 @@ describe("toResponsesRequest", () => {
       ],
       tool_choice: { type: "tool", name: "web_search" },
     } as unknown as AnthropicRequest)
+    expect(req.tool_choice).toEqual({ type: "web_search" })
+  })
+
+  test("with the mapping disabled, WebSearch is dropped and its pin degrades", () => {
+    setWebSearchMapping(false)
+    const req = toResponsesRequest({
+      model: "gpt-5.6-luna",
+      max_tokens: 1,
+      messages: [],
+      tools: [{ name: "web_search", type: "web_search_20250305" }],
+      tool_choice: { type: "tool", name: "web_search" },
+    } as unknown as AnthropicRequest)
+    expect(req.tools).toHaveLength(0)
     expect(req.tool_choice).toBe("auto")
+    setWebSearchMapping(true)
   })
 
   test("normalizes advertised aliases and bracket suffixes", () => {

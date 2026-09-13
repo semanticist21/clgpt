@@ -5,12 +5,19 @@
 // StreamTranslator can render Anthropic events unchanged.
 
 import { effortFor, normalizeModel } from "./translate"
-import type { AnthropicRequest, OpenAIResponse } from "./wire"
+import type { AnthropicRequest, AnthropicTool, OpenAIResponse } from "./wire"
 import { classifyContent } from "./blocks"
 
 // ---------------------------------------------------------------------------
 // Request direction: Anthropic -> Responses
 // ---------------------------------------------------------------------------
+
+// Whether Claude's built-in WebSearch maps onto the upstream's native
+// web_search tool. Off by default; cli.ts enables it from setup's web pref.
+let webSearchMapping = false
+export function setWebSearchMapping(enabled: boolean): void {
+  webSearchMapping = enabled
+}
 
 interface ResponsesTool {
   type: "function"
@@ -18,6 +25,11 @@ interface ResponsesTool {
   description?: string
   parameters: Record<string, unknown>
   strict?: false
+}
+
+// The Responses endpoint's native web search, executed upstream.
+interface ResponsesNativeSearchTool {
+  type: "web_search"
 }
 
 interface ResponsesRequest {
@@ -29,8 +41,13 @@ interface ResponsesRequest {
   stream?: boolean
   temperature?: number
   top_p?: number
-  tools?: ResponsesTool[]
-  tool_choice?: "auto" | "none" | "required" | { type: "function"; name: string }
+  tools?: (ResponsesTool | ResponsesNativeSearchTool)[]
+  tool_choice?:
+    | "auto"
+    | "none"
+    | "required"
+    | { type: "function"; name: string }
+    | { type: "web_search" }
   reasoning?: { effort: string }
   service_tier?: "fast"
 }
@@ -144,15 +161,29 @@ export function toResponsesRequest(
 
   const effort = effortFor(payload, allowedEfforts)
 
-  // Claude's built-in server-side tools (WebSearch, WebFetch) arrive without
-  // input_schema and cannot be executed by an upstream that only knows
-  // function tools - drop them rather than sending a broken schema. If
-  // tool_choice pinned one of the dropped tools, degrade to "auto", or the
-  // upstream rejects the request with "tool choice not found in tools".
-  const servable = (payload.tools ?? []).filter((t) => t.input_schema)
+  // Claude's built-in server-side tools arrive without input_schema. The
+  // exception is WebSearch: ChatGPT's Responses endpoint has a native
+  // web_search tool, so map it - the search then executes upstream and the
+  // answer text flows back through the normal stream. Every other
+  // schema-less tool (WebFetch) cannot be served as a function tool and is
+  // dropped. If tool_choice pinned a dropped tool, degrade to "auto", or
+  // the upstream rejects with "tool choice not found in tools".
+  const servable = (payload.tools ?? []).filter(
+    (t): t is AnthropicTool & { input_schema: Record<string, unknown> } =>
+      Boolean(t.input_schema),
+  )
+  // Session-level switch, driven by setup's web pref (cli.ts calls the
+  // setter once the model catalog is known).
+  const wantsNativeSearch =
+    webSearchMapping &&
+    (payload.tools ?? []).some((t) => t.type?.startsWith("web_search"))
   const choice = payload.tool_choice
+  const pinnedSearch =
+    webSearchMapping && choice?.type === "tool" && choice.name === "web_search"
   const pinnedMissing =
-    choice?.type === "tool" && !servable.some((t) => t.name === choice.name)
+    choice?.type === "tool" &&
+    !pinnedSearch &&
+    !servable.some((t) => t.name === choice.name)
 
   return {
     model: normalizeModel(payload.model),
@@ -163,14 +194,22 @@ export function toResponsesRequest(
     stream: payload.stream,
     temperature: payload.temperature,
     top_p: payload.top_p,
-    tools: servable.map((t) => ({
-      type: "function" as const,
-      name: t.name,
-      description: t.description,
-      parameters: t.input_schema,
-      strict: false as const,
-    })),
-    tool_choice: pinnedMissing
+    tools: [
+      ...servable.map((t) => ({
+        type: "function" as const,
+        name: t.name,
+        description: t.description,
+        parameters: t.input_schema,
+        strict: false as const,
+      })),
+      ...(wantsNativeSearch ? [{ type: "web_search" as const }] : []),
+    ],
+    ...(wantsNativeSearch
+      ? { include: ["web_search_call.action.sources"] }
+      : {}),
+    tool_choice: pinnedSearch
+      ? { type: "web_search" }
+      : pinnedMissing
       ? ("auto" as const)
       : choice?.type === "auto"
         ? ("auto" as const)

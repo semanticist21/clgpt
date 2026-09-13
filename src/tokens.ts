@@ -48,7 +48,7 @@ export function estimateTokens(payload: AnthropicRequest): number {
   count(payload.system)
   for (const tool of payload.tools ?? []) {
     chars += tool.name.length + (tool.description?.length ?? 0)
-    chars += JSON.stringify(tool.input_schema).length
+    chars += JSON.stringify(tool.input_schema ?? {}).length
   }
   return Math.ceil(chars / CHARS_PER_TOKEN) + images * IMAGE_TOKENS +
     (payload.messages?.length ?? 0) * MESSAGE_TOKENS

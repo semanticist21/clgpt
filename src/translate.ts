@@ -237,7 +237,11 @@ function translateTools(
   tools: AnthropicRequest["tools"],
 ): OpenAIRequest["tools"] {
   if (!tools || tools.length === 0) return undefined
-  return tools.map((tool) => ({
+  // Schema-less tools are Claude's built-in server-side ones; an OpenAI
+  // dialect cannot serve them, so they are omitted instead of sent broken.
+  const servable = tools.filter((tool) => tool.input_schema)
+  if (servable.length === 0) return undefined
+  return servable.map((tool) => ({
     type: "function" as const,
     function: {
       name: tool.name,

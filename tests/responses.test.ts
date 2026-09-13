@@ -11,6 +11,22 @@ import {
 } from "../src/responses"
 
 describe("toResponsesRequest", () => {
+  test("drops Claude's built-in server tools instead of crashing on them", () => {
+    // Claude Code sends WebSearch/WebFetch as server-side tools with no
+    // input_schema; they cannot be served as upstream function tools.
+    const req = toResponsesRequest({
+      model: "gpt-5.6-luna",
+      max_tokens: 1,
+      messages: [],
+      tools: [
+        { name: "web_search", type: "web_search_20250305" },
+        { name: "read_file", description: "reads", input_schema: { type: "object", properties: {} } },
+      ],
+    } as unknown as AnthropicRequest)
+    expect(req.tools).toHaveLength(1)
+    expect(req.tools![0].name).toBe("read_file")
+  })
+
   test("normalizes advertised aliases and bracket suffixes", () => {
     setModelAliases(new Map([["advertised-gpt", "gpt-upstream"]]))
     try {

@@ -153,7 +153,10 @@ export function toResponsesRequest(
     stream: payload.stream,
     temperature: payload.temperature,
     top_p: payload.top_p,
-    tools: payload.tools?.map((t) => ({
+    // Claude's built-in server-side tools (WebSearch, WebFetch) arrive
+    // without input_schema and cannot be executed by an upstream that only
+    // knows function tools - drop them rather than sending a broken schema.
+    tools: payload.tools?.filter((t) => t.input_schema).map((t) => ({
       type: "function" as const,
       name: t.name,
       description: t.description,

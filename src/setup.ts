@@ -64,8 +64,11 @@ export async function runSetup(): Promise<SetupPrefs> {
     current.bypass,
   )
 
-  // Web defaults to on: the adapter maps Claude's built-in WebSearch onto
-  // ChatGPT's native web_search. `--no-web` disables it for one run.
+  setup.web = await ask(
+    "Answer WebSearch with ChatGPT's native web search?",
+    current.web ?? true,
+  )
+
   // Claude's own Chrome integration cannot work here, so there is nothing to
   // ask about it - only an alternative to offer.
   setup.browser = await ask(

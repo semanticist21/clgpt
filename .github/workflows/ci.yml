@@ -1,0 +1,16 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      # The checked-in lockfile is compatible with Bun releases that predate
+      # lockfile v2; current Bun falls back to a resolver without rewriting it.
+      - run: bun install --no-save
+      - run: bun test
+      - run: bun run check

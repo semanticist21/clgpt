@@ -25,7 +25,18 @@ describe("prepareClaudeHome", () => {
     // A leftover ChatGPT slug must not be carried into the private copy.
     await writeFile(
       join(real, "settings.json"),
-      JSON.stringify({ model: "gpt-4.1", env: { KEEP: "1" } }),
+      // A provider env block (here: z.ai's) must lose its auth and routing
+      // keys in the copy, or claude sends that token instead of clgpt's.
+      JSON.stringify({
+        model: "gpt-4.1",
+        env: {
+          KEEP: "1",
+          ANTHROPIC_AUTH_TOKEN: "zai-token",
+          ANTHROPIC_BASE_URL: "https://api.z.ai/api/anthropic",
+          ANTHROPIC_API_KEY: "zai-key",
+          API_TIMEOUT_MS: "600000",
+        },
+      }),
     )
     await writeFile(join(home, ".claude.json"), JSON.stringify({ trusted: true }))
 
@@ -46,7 +57,7 @@ describe("prepareClaudeHome", () => {
     expect((await lstat(join(dir!, ".claude.json"))).mode & 0o777).toBe(0o600)
     expect((await lstat(join(dir!, "settings.json"))).mode & 0o777).toBe(0o600)
     expect(settings.model).toBeUndefined()
-    expect(settings.env).toEqual({ KEEP: "1" })
+    expect(settings.env).toEqual({ KEEP: "1", API_TIMEOUT_MS: "600000" })
 
     // Writing through the private dir must never reach the user's file.
     await writeFile(

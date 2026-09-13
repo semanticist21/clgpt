@@ -14,10 +14,10 @@ ChatGPT subscription, and [Bun](https://bun.sh). From npm (Bun is still
 required at runtime):
 
 ```sh
-npm install --global clgpt
+npm install --global @semanticist14/clgpt
 ```
 
-Update npm installs with `npm install --global clgpt@latest`.
+Update npm installs with `npm install --global @semanticist14/clgpt@latest`.
 
 Or use the GitHub installer:
 

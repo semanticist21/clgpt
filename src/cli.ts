@@ -214,7 +214,7 @@ function appDir(): string | null {
   const canonicalRollback = (candidate: string): boolean => {
     try {
       const manifest = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8")) as { name?: string }
-      if (manifest.name !== "clgpt") return false
+      if (manifest.name !== "clgpt" && manifest.name !== "@semanticist14/clgpt") return false
       const origin = Bun.spawnSync(["git", "-C", candidate, "remote", "get-url", "origin"], { stdout: "pipe", stderr: "pipe" })
       const value = origin.stdout.toString().trim()
       return origin.exitCode === 0 && (value === CANONICAL_REPOSITORY || value === "git@github.com:semanticist21/clgpt.git")
@@ -293,7 +293,7 @@ export async function updateInstall(
     if (!existsSync(join(candidate, ".git"))) return false
     try {
       const manifest = JSON.parse(await readFile(join(candidate, "package.json"), "utf8")) as { name?: string }
-      if (manifest.name !== "clgpt") return false
+      if (manifest.name !== "clgpt" && manifest.name !== "@semanticist14/clgpt") return false
     } catch {
       return false
     }
@@ -327,7 +327,9 @@ export async function updateInstall(
     const manifest = JSON.parse(await readFile(join(dir, "package.json"), "utf8")) as {
       name?: string
     }
-    if (manifest.name !== "clgpt") throw new Error("not clgpt")
+    if (manifest.name !== "clgpt" && manifest.name !== "@semanticist14/clgpt") {
+      throw new Error("not clgpt")
+    }
   } catch {
     throw new Error("update refused: the target is not a clgpt installation")
   }
@@ -457,7 +459,7 @@ export async function updateInstall(
 }
 
 export function npmUpdateMessage(): string {
-  return "This clgpt installation came from npm. Update it with `npm install --global clgpt@latest`."
+  return "This clgpt installation came from npm. Update it with `npm install --global @semanticist14/clgpt@latest`."
 }
 
 async function runUpdate(): Promise<void> {

@@ -41,7 +41,7 @@ async function writeRelease(work: string, marker: string) {
   await mkdir(join(work, "scripts"), { recursive: true })
   await writeFile(
     join(work, "package.json"),
-    JSON.stringify({ name: "clgpt", version: "1.0.0" }) + "\n",
+    JSON.stringify({ name: "@semanticist14/clgpt", version: "1.0.0" }) + "\n",
   )
   await writeFile(join(work, "src", "marker.txt"), marker + "\n")
   await writeFile(join(work, "src", "cli.ts"), 'console.log("fixture")\n')

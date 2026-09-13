@@ -13,7 +13,7 @@ fail() { printf '\033[1;31mError:\033[0m %s\n' "$*" >&2; exit 1; }
 is_clgpt_install() {
   local dir="$1"
   [ -d "$dir/.git" ] || return 1
-  grep -Eq '^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"clgpt"[[:space:]]*,?[[:space:]]*$' "$dir/package.json" || return 1
+  grep -Eq '^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"(@semanticist14/)?clgpt"[[:space:]]*,?[[:space:]]*$' "$dir/package.json" || return 1
   local origin
   origin="$(git -C "$dir" remote get-url origin 2>/dev/null || true)"
   [ "$origin" = "$REPO" ] || [ "$origin" = "git@github.com:semanticist21/clgpt.git" ]
@@ -57,7 +57,7 @@ if [ ! -e "$CLGPT_DIR" ] && [ -d "$CLGPT_DIR.previous/.git" ]; then
 fi
 if [ -d "$CLGPT_DIR/.git" ]; then
   log "Updating the existing install: $CLGPT_DIR"
-  grep -Eq '^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"clgpt"[[:space:]]*,?[[:space:]]*$' \
+  grep -Eq '^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"(@semanticist14/)?clgpt"[[:space:]]*,?[[:space:]]*$' \
     "$CLGPT_DIR/package.json" \
     || fail "$CLGPT_DIR is a git repo, but not a clgpt install"
   CURRENT_URL="$(git -C "$CLGPT_DIR" remote get-url origin 2>/dev/null || true)"

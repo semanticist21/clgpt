@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test"
 import { npmUpdateMessage, parseArgs } from "../src/cli"
 
 test("npm installs have an npm update path", () => {
-  expect(npmUpdateMessage()).toContain("npm install --global clgpt@latest")
+  expect(npmUpdateMessage()).toContain("npm install --global @semanticist14/clgpt@latest")
 })
 
 describe("parseArgs", () => {

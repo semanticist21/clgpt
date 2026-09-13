@@ -13,7 +13,7 @@ fail() { printf '\033[1;31mError:\033[0m %s\n' "$*" >&2; exit 1; }
 is_clgpt_install() {
   local dir="$1"
   [ -d "$dir/.git" ] || return 1
-  grep -Eq '^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"clgpt"[[:space:]]*,?[[:space:]]*$' "$dir/package.json" || return 1
+  grep -Eq '^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"(@semanticist14/)?clgpt"[[:space:]]*,?[[:space:]]*$' "$dir/package.json" || return 1
   local origin
   origin="$(git -C "$dir" remote get-url origin 2>/dev/null || true)"
   [ "$origin" = "https://github.com/semanticist21/clgpt.git" ] ||

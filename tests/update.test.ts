@@ -23,7 +23,7 @@ async function fixture() {
   const work = join(root, "work")
   const active = join(root, "active")
   const bin = join(root, "bin")
-  git(root, "init", "--bare", remote)
+  git(root, "init", "--bare", "-b", "main", remote)
   git(root, "init", "-b", "main", work)
   git(work, "config", "user.email", "test@example.com")
   git(work, "config", "user.name", "clgpt test")

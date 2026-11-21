@@ -58,8 +58,10 @@ clgpt update      # update after a staged install check
 ```
 
 `clgpt --no-bypass`, `clgpt --no-browser`, `clgpt --no-web`, and
-`clgpt --no-select` override a saved default for one run. `CLGPT_MODELS` can restrict the local allowlisted
-GPT catalog with comma-separated ids.
+`clgpt --no-select` override a saved default for one run. CLGPT fetches the
+signed-in account's Codex model catalog at startup and for `clgpt status`.
+If discovery fails, it reports the error and uses the built-in GPT list.
+Set `CLGPT_MODELS` to comma-separated ids to restrict the active catalog.
 
 ## Web access
 
